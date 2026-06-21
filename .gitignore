@@ -1,0 +1,13 @@
+# virtual env
+.venv/
+__pycache__/
+*.pyc
+
+# generated database (rebuilt from queries.csv on startup)
+data/typeahead.db
+data/typeahead.db-*
+
+# raw AOL log is large (~216 MB) — keep it local, document the source in README
+data/user-ct-test-collection-*.txt
+
+# keep data/queries.csv (the cleaned dataset) — it's small (~4 MB)

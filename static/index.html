@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Search Typeahead</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header class="hero">
+      <h1>Search Typeahead</h1>
+      <p class="subtitle">
+        Start typing to see the top&nbsp;10 matching queries. Switch ranking
+        between all-time popularity and recency-aware trending.
+      </p>
+    </header>
+
+    <!-- ranking mode: segmented toggle (radios kept for the JS) -->
+    <div class="segmented" role="radiogroup" aria-label="Ranking mode">
+      <label class="seg">
+        <input type="radio" name="mode" value="basic" checked />
+        <span>Popularity</span>
+      </label>
+      <label class="seg">
+        <input type="radio" name="mode" value="trending" />
+        <span>Trending</span>
+      </label>
+    </div>
+
+    <!-- search box + dropdown -->
+    <div class="search">
+      <div class="field">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M21 21l-4.3-4.3M11 19a8 8 0 100-16 8 8 0 000 16z"
+                fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <input
+          id="box"
+          type="text"
+          placeholder="Search… try “goo”, “mapq”, “ebay”"
+          autocomplete="off"
+          aria-label="Search"
+        />
+      </div>
+      <button id="go">Search</button>
+
+      <!-- live suggestions -->
+      <ul id="dropdown" class="dropdown" role="listbox"></ul>
+    </div>
+
+    <!-- loading / error / result states -->
+    <p id="status" class="status"></p>
+    <div id="result" class="result"></div>
+
+    <!-- trending section -->
+    <section class="trending card">
+      <div class="card-head">
+        <h2>Trending searches</h2>
+        <span class="badge">recency-aware</span>
+      </div>
+      <ol id="trending-list" class="trending-list">
+        <li class="muted">Submit a few searches to populate trending.</li>
+      </ol>
+    </section>
+
+    <p class="hint">
+      Tip: use <kbd>↑</kbd> <kbd>↓</kbd> to move through suggestions and
+      <kbd>Enter</kbd> to search.
+    </p>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

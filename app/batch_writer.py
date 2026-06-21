@@ -38,6 +38,10 @@ class BatchWriter:
         self.cache = cache
         self._buffer = []                 # list of raw query strings
         self._lock = threading.Lock()     # guards the buffer (request thread vs flush)
+        # Serialises whole flushes AND decays. Concurrent flushes would both
+        # mutate the trie's dicts and the DB connection at once, so only one
+        # index-mutating operation runs at a time.
+        self._index_lock = threading.Lock()
         self._task = None
         self._running = False
 
@@ -56,28 +60,38 @@ class BatchWriter:
 
         Returns the number of distinct queries written (0 if nothing buffered).
         """
-        with self._lock:
-            if not self._buffer:
-                return 0
-            batch = self._buffer
-            self._buffer = []             # swap out the buffer under the lock
+        # Only one flush/decay at a time: protects the trie and DB connection.
+        with self._index_lock:
+            with self._lock:
+                if not self._buffer:
+                    return 0
+                batch = self._buffer
+                self._buffer = []         # swap out the buffer under the lock
 
-        # Aggregate duplicates: {query: times_searched_in_this_batch}
-        counter = Counter(batch)
+            # Aggregate duplicates: {query: times_searched_in_this_batch}
+            counter = Counter(batch)
 
-        # 1) durable write to the primary store (ONE transaction)
-        written = self.store.batch_upsert(counter)
+            # 1) durable write to the primary store (ONE transaction)
+            written = self.store.batch_upsert(counter)
+            metrics.record_search_flush()   # one flush == one DB transaction
 
-        # 2) update the in-memory trie so suggestions reflect the new counts
-        for query, delta in counter.items():
-            self.trie.bump(query, delta)
+            # 2) update the in-memory trie so suggestions reflect the new counts
+            for query, delta in counter.items():
+                self.trie.bump(query, delta)
 
-        # 3) invalidate cached suggestions for every prefix of every changed
-        #    query, so the next /suggest recomputes fresh results from the trie.
-        for query in counter:
-            self._invalidate_prefixes(query)
+            # 3) invalidate cached suggestions for every prefix of every changed
+            #    query, so the next /suggest recomputes fresh from the trie.
+            for query in counter:
+                self._invalidate_prefixes(query)
 
-        return written
+            return written
+
+    def decay(self, factor):
+        """Fade recent activity in both the trie and the store. Shares the
+        index lock with flush() so the two never mutate the trie at once."""
+        with self._index_lock:
+            self.trie.decay_all(factor)
+            self.store.decay_recent(factor)
 
     def _invalidate_prefixes(self, query):
         """A changed query affects the suggestion list of all of its prefixes

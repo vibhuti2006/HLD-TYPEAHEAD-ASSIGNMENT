@@ -18,6 +18,7 @@ write the aggregated counts back here so data survives a restart.
 import csv
 import os
 import sqlite3
+import threading
 
 from app.config import CSV_PATH, DB_PATH
 from app.metrics import metrics
@@ -26,8 +27,11 @@ from app.metrics import metrics
 class Store:
     def __init__(self, db_path=DB_PATH):
         self.db_path = db_path
-        # check_same_thread=False: the background batch-writer task touches the
-        # connection from a different thread. We serialise our own access.
+        # check_same_thread=False: FastAPI runs sync endpoints in a thread pool,
+        # so the connection is touched from several threads. A single SQLite
+        # connection is NOT safe for concurrent use, so we guard every DB call
+        # with this lock — only one thread touches the connection at a time.
+        self._lock = threading.Lock()
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL;")  # better concurrent read/write
         self._create_table()
@@ -88,17 +92,18 @@ class Store:
         if not counter:
             return 0
         rows = [(q, n, float(n)) for q, n in counter.items()]
-        self.conn.executemany(
-            """
-            INSERT INTO queries (query, count, recent_count)
-            VALUES (?, ?, ?)
-            ON CONFLICT(query) DO UPDATE SET
-                count        = count + excluded.count,
-                recent_count = recent_count + excluded.recent_count
-            """,
-            rows,
-        )
-        self.conn.commit()
+        with self._lock:
+            self.conn.executemany(
+                """
+                INSERT INTO queries (query, count, recent_count)
+                VALUES (?, ?, ?)
+                ON CONFLICT(query) DO UPDATE SET
+                    count        = count + excluded.count,
+                    recent_count = recent_count + excluded.recent_count
+                """,
+                rows,
+            )
+            self.conn.commit()
         metrics.add_db_writes(1)  # the whole batch is ONE write statement
         return len(rows)
 
@@ -108,8 +113,11 @@ class Store:
         This is how recent activity fades over time so a brief spike does not
         rank highly forever.
         """
-        self.conn.execute("UPDATE queries SET recent_count = recent_count * ?", (factor,))
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute(
+                "UPDATE queries SET recent_count = recent_count * ?", (factor,)
+            )
+            self.conn.commit()
         metrics.add_db_writes(1)
 
     def close(self):

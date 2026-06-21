@@ -44,8 +44,8 @@ async def _decay_loop():
     import asyncio
     while True:
         await asyncio.sleep(DECAY_INTERVAL_SECONDS)
-        state["trie"].decay_all(DECAY_FACTOR)
-        state["store"].decay_recent(DECAY_FACTOR)
+        # routed through the batch writer so decay and flush share one lock
+        state["batch"].decay(DECAY_FACTOR)
 
 
 @asynccontextmanager

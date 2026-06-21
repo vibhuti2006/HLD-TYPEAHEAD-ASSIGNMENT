@@ -24,8 +24,10 @@ class Metrics:
         self.cache_misses = 0
         # /search traffic and the DB write reduction story
         self.searches = 0          # how many POST /search the user made
-        self.db_writes = 0         # how many DB write statements we actually ran
+        self.db_writes = 0         # TOTAL DB write statements (incl. startup load + decay)
         self.db_reads = 0          # how many DB read statements we ran
+        self.search_flushes = 0    # DB write transactions used to persist searches
+                                   # (this is what batching reduces vs `searches`)
         # rolling window of recent /suggest latencies (milliseconds)
         self.latencies_ms = deque(maxlen=LATENCY_SAMPLE_SIZE)
 
@@ -40,6 +42,10 @@ class Metrics:
 
     def record_search(self):
         self.searches += 1
+
+    def record_search_flush(self):
+        """One batch flush persisted some searches (one DB transaction)."""
+        self.search_flushes += 1
 
     def add_db_writes(self, n):
         self.db_writes += n
@@ -59,8 +65,15 @@ class Metrics:
     def snapshot(self):
         total_lookups = self.cache_hits + self.cache_misses
         hit_rate = (self.cache_hits / total_lookups) if total_lookups else 0.0
-        # write reduction: searches the user made vs DB writes we actually did
-        write_reduction = (1 - self.db_writes / self.searches) if self.searches else 0.0
+        # Write reduction from batching: without batching every search would be
+        # one DB write (searches). With batching, the searches are persisted in
+        # `search_flushes` transactions. So reduction = 1 - flushes / searches.
+        # (We compare against search_flushes, NOT total db_writes, because
+        # db_writes also includes the one-time startup load and the periodic
+        # decay job, which are unrelated to search traffic.)
+        write_reduction = (
+            (1 - self.search_flushes / self.searches) if self.searches else 0.0
+        )
         return {
             "suggest_calls": self.suggest_calls,
             "cache_hits": self.cache_hits,
@@ -69,9 +82,10 @@ class Metrics:
             "latency_ms_p50": self._percentile(50),
             "latency_ms_p95": self._percentile(95),
             "searches": self.searches,
-            "db_writes": self.db_writes,
-            "db_reads": self.db_reads,
+            "search_flushes": self.search_flushes,
             "write_reduction_ratio": round(write_reduction, 4),
+            "db_writes_total": self.db_writes,
+            "db_reads_total": self.db_reads,
         }
 
 

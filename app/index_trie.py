@@ -69,8 +69,12 @@ class Trie:
         node.recent += delta
 
     def decay_all(self, factor):
-        """Fade every query's recent activity (recent *= factor)."""
-        for node in self.terminals:
+        """Fade every query's recent activity (recent *= factor).
+
+        Iterates a snapshot (list(...)) because a concurrent search can append
+        a brand-new terminal node; iterating the live list could otherwise raise
+        'list changed size during iteration'."""
+        for node in list(self.terminals):
             node.recent *= factor
 
     def _node_for_prefix(self, prefix):

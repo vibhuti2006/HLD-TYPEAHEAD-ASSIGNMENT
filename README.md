@@ -138,7 +138,7 @@ Performance numbers: `cache_hit_rate`, `latency_ms_p50/p95`, `searches`,
 
 ---
 
-## 5. Design choices & trade-offs (the viva answers)
+## 5. Design choices & trade-offs
 
 ### Why a trie for suggestions?
 Every suggestion must **start with** the typed prefix. A trie walks the prefix in
